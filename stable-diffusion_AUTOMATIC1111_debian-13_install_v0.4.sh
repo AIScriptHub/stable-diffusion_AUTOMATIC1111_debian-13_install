@@ -24,6 +24,8 @@
 #      /var/tmp, so pip/torch downloads and build artifacts don't fill up
 #      RAM on a tmpfs-backed /tmp. Skipped entirely on systems with 8 GB+
 #      RAM available.
+#   4. Asks (10s timeout, defaults to yes) whether the systemd service
+#      (set up later) should be enabled for automatic start on boot
 #   4. Installs required system packages (build tools, git, etc.)
 #   5. Installs pyenv (if not already present), in the chosen scope
 #   6. Builds Python 3.11.11 via pyenv, side by side with the system Python
@@ -69,6 +71,10 @@ PYENV_SYSTEM_WIDE=false
 # Set by check_nvidia_driver(): whether an NVIDIA driver was detected, or
 # the user explicitly confirmed to continue without one.
 NVIDIA_AVAILABLE=true
+
+# Set by ask_systemd_autostart(): whether the systemd service should be
+# enabled for automatic start on boot.
+ENABLE_SYSTEMD_AUTOSTART=true
 
 # ------------------------------------------------------------------
 # Helper: section header
@@ -219,6 +225,36 @@ setup_tmpdir_on_disk() {
 
     echo "-> TMPDIR=$TMPDIR"
     echo "-> PIP_CACHE_DIR=$PIP_CACHE_DIR"
+}
+
+# ------------------------------------------------------------------
+# Step 1b: Ask whether the systemd service should auto-start on boot
+# ------------------------------------------------------------------
+# NOTE: Asked here (right after the TMPDIR decision) so all prompts happen
+# early, before the longer unattended install steps run. The actual
+# "systemctl enable" call happens later in write_systemd_unit(), once the
+# service file has been installed - this function only records the choice.
+ask_systemd_autostart() {
+    section "Step 1b: Enable systemd autostart on boot?"
+
+    echo "The WebUI will be set up as a systemd service (see later step)."
+    echo ""
+
+    local confirm=""
+    if ! read -r -t 10 -p "Enable it to start automatically on boot? [Y/n] (10s timeout, defaults to yes): " confirm; then
+        echo ""
+        echo "No input received within 10 seconds - enabling autostart (default)."
+        confirm="y"
+    fi
+
+    if [[ "$confirm" =~ ^[Nn]([Oo])?$ ]]; then
+        ENABLE_SYSTEMD_AUTOSTART=false
+        echo "-> Autostart on boot will NOT be enabled. Start manually via:"
+        echo "   sudo systemctl start stable-diffusion-webui"
+    else
+        ENABLE_SYSTEMD_AUTOSTART=true
+        echo "-> Autostart on boot will be enabled."
+    fi
 }
 
 # ------------------------------------------------------------------
@@ -473,6 +509,14 @@ EOF
     sudo systemctl daemon-reload
 
     echo "-> systemd unit written to $service_file"
+
+    if [ "$ENABLE_SYSTEMD_AUTOSTART" = true ]; then
+        sudo systemctl enable "$service_name"
+        echo "-> Autostart on boot enabled."
+    else
+        echo "-> Autostart on boot NOT enabled (as chosen earlier)."
+    fi
+
     echo ""
     echo "The WebUI can now be managed via systemctl, e.g.:"
     echo "  sudo systemctl start   $service_name"
@@ -508,6 +552,7 @@ main() {
     check_nvidia_driver
     ask_pyenv_scope
     setup_tmpdir_on_disk
+    ask_systemd_autostart
     install_system_packages
     install_pyenv
     install_python_via_pyenv

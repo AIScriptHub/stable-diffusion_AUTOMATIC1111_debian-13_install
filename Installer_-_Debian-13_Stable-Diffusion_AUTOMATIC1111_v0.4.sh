@@ -10,7 +10,7 @@
 #   - sudo privileges (apt install steps require it)
 #
 # Usage:
-#   bash SD-Automatic1111_install_D13.sh
+#   bash Installer_-_Debian-13_Stable-Diffusion_AUTOMATIC1111_v0.4.sh
 #
 # What this script does:
 #   1. Verifies the NVIDIA driver is present. If not, warns the user and
